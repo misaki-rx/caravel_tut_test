@@ -61,6 +61,7 @@ module user_proj_example #(
     input  [127:0] la_oenb,
 
     // IOs
+    // MPRJ_IO_PADS == 38
     input  [`MPRJ_IO_PADS-1:0] io_in,
     output [`MPRJ_IO_PADS-1:0] io_out,
     output [`MPRJ_IO_PADS-1:0] io_oeb,
@@ -68,98 +69,25 @@ module user_proj_example #(
     // IRQ
     output [2:0] irq
 );
-    wire clk;
-    wire rst;
 
-    wire [`MPRJ_IO_PADS-1:0] io_in;
-    wire [`MPRJ_IO_PADS-1:0] io_out;
-    wire [`MPRJ_IO_PADS-1:0] io_oeb;
+    wire sum;
+    wire cout;
 
-    wire [31:0] rdata; 
-    wire [31:0] wdata;
-    wire [BITS-1:0] count;
+    assign io_out = {36'b0, cout, sum};
+    // configure [3:2] as input, and [1:0] as output
+    assign io_oeb = {{(`MPRJ_IO_PADS-5){1'b0}}, {3'b111}, {2'b0}};
+    
+    peripheral_add a0 (
+        .clk(wb_clk_i),
+        .rst(io_in[4]),	
+	.c_sel(1'b1),
+	.in_xor(io_in[2]),
+	.in_and(io_in[3]),
+	.cin(1'b0),
 
-    wire valid;
-    wire [3:0] wstrb;
-    wire [31:0] la_write;
-
-    // WB MI A
-    assign valid = wbs_cyc_i && wbs_stb_i; 
-    assign wstrb = wbs_sel_i & {4{wbs_we_i}};
-    assign wbs_dat_o = rdata;
-    assign wdata = wbs_dat_i;
-
-    // IO
-    assign io_out = count;
-    assign io_oeb = {(`MPRJ_IO_PADS-1){rst}};
-
-    // IRQ
-    assign irq = 3'b000;	// Unused
-
-    // LA
-    assign la_data_out = {{(127-BITS){1'b0}}, count};
-    // Assuming LA probes [63:32] are for controlling the count register  
-    assign la_write = ~la_oenb[63:32] & ~{BITS{valid}};
-    // Assuming LA probes [65:64] are for controlling the count clk & reset  
-    assign clk = (~la_oenb[64]) ? la_data_in[64]: wb_clk_i;
-    assign rst = (~la_oenb[65]) ? la_data_in[65]: wb_rst_i;
-
-    counter #(
-        .BITS(BITS)
-    ) counter(
-        .clk(clk),
-        .reset(rst),
-        .ready(wbs_ack_o),
-        .valid(valid),
-        .rdata(rdata),
-        .wdata(wbs_dat_i),
-        .wstrb(wstrb),
-        .la_write(la_write),
-        .la_input(la_data_in[63:32]),
-        .count(count)
+	.cout(cout),
+	.sum(sum)
     );
-
-endmodule
-
-module counter #(
-    parameter BITS = 32
-)(
-    input clk,
-    input reset,
-    input valid,
-    input [3:0] wstrb,
-    input [BITS-1:0] wdata,
-    input [BITS-1:0] la_write,
-    input [BITS-1:0] la_input,
-    output ready,
-    output [BITS-1:0] rdata,
-    output [BITS-1:0] count
-);
-    reg ready;
-    reg [BITS-1:0] count;
-    reg [BITS-1:0] rdata;
-
-    always @(posedge clk) begin
-        if (reset) begin
-            count <= 0;
-            ready <= 0;
-        end else begin
-            ready <= 1'b0;
-            if (~|la_write) begin
-                count <= count + 1;
-            end
-            if (valid && !ready) begin
-                ready <= 1'b1;
-                rdata <= count;
-                if (wstrb[0]) count[7:0]   <= wdata[7:0];
-                if (wstrb[1]) count[15:8]  <= wdata[15:8];
-                if (wstrb[2]) count[23:16] <= wdata[23:16];
-                if (wstrb[3]) count[31:24] <= wdata[31:24];
-            end else if (|la_write) begin
-                count <= la_write & la_input;
-            end
-        end
-    end
 
 endmodule
 `default_nettype wire
